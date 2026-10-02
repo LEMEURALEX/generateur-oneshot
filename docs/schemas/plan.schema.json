@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:oneshot:schema:plan:1.0",
+  "title": "OneShotPlan",
+  "description": "Plan de partie one-shot. Source de vérité partagée par le backend (validation de la sortie IA), l'OpenAPI et le frontend.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "language", "title", "pitch", "synopsis", "ruleSystem", "tones",
+    "environment", "party", "gmExperience", "durationMinutes", "hooks", "scenes",
+    "encounters", "npcs", "loot", "playerAids", "gmTips", "conclusion"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "language": { "$ref": "#/$defs/Language" },
+    "title": { "$ref": "#/$defs/ShortText" },
+    "pitch": { "$ref": "#/$defs/Text", "description": "Résumé court présentable aux joueurs." },
+    "synopsis": { "$ref": "#/$defs/LongText", "description": "Histoire complète, réservée au MJ." },
+    "ruleSystem": { "$ref": "#/$defs/RuleSystem" },
+    "tones": {
+      "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/Tone" }
+    },
+    "environment": { "$ref": "#/$defs/Environment" },
+    "party": { "$ref": "#/$defs/Party" },
+    "gmExperience": { "$ref": "#/$defs/GmExperience" },
+    "durationMinutes": { "$ref": "#/$defs/DurationMinutes" },
+    "hooks": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "$ref": "#/$defs/Hook" } },
+    "scenes": { "type": "array", "minItems": 3, "maxItems": 8, "items": { "$ref": "#/$defs/Scene" } },
+    "encounters": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/Encounter" } },
+    "npcs": { "type": "array", "minItems": 1, "maxItems": 12, "items": { "$ref": "#/$defs/Npc" } },
+    "loot": { "type": "array", "maxItems": 15, "items": { "$ref": "#/$defs/LootItem" } },
+    "playerAids": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/PlayerAid" } },
+    "gmTips": { "$ref": "#/$defs/TipList" },
+    "conclusion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["success", "failure"],
+      "properties": {
+        "success": { "$ref": "#/$defs/Text" },
+        "failure": { "$ref": "#/$defs/Text" }
+      }
+    }
+  },
+  "$defs": {
+    "Language": { "type": "string", "enum": ["fr", "en"] },
+    "RuleSystem": { "type": "string", "enum": ["TYPE_5E", "ALLEGE", "NARRATIF"] },
+    "Tone": {
+      "type": "string",
+      "enum": ["EPIC", "HORROR", "HUMOR", "MYSTERY", "INTRIGUE", "ADVENTURE", "TRAGIC", "LIGHTHEARTED"]
+    },
+    "Environment": {
+      "type": "string",
+      "enum": ["DUNGEON", "FOREST", "CITY", "VILLAGE", "MOUNTAIN", "SEA", "DESERT", "SWAMP", "UNDERGROUND", "PLANAR", "OTHER"]
+    },
+    "GmExperience": { "type": "string", "enum": ["BEGINNER", "INTERMEDIATE", "EXPERT"] },
+    "PlayerExperience": { "type": "string", "enum": ["BEGINNER", "MIXED", "EXPERIENCED"] },
+    "DurationMinutes": { "type": "integer", "enum": [120, 180, 240] },
+    "Difficulty": { "type": "string", "enum": ["EASY", "MEDIUM", "HARD", "DEADLY"] },
+    "SceneType": { "type": "string", "enum": ["COMBAT", "EXPLORATION", "ROLEPLAY", "MIXED"] },
+    "EncounterKind": { "type": "string", "enum": ["COMBAT", "SOCIAL", "PUZZLE", "TRAP", "CHASE"] },
+    "Rarity": { "type": "string", "enum": ["COMMON", "UNCOMMON", "RARE", "VERY_RARE", "LEGENDARY"] },
+    "ChallengeRating": {
+      "type": "string",
+      "pattern": "^(0|1/8|1/4|1/2|[1-9]|[12][0-9]|30)$"
+    },
+
+    "ShortText": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "Text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "LongText": { "type": "string", "minLength": 1, "maxLength": 5000 },
+    "TipList": { "type": "array", "maxItems": 10, "items": { "type": "string", "minLength": 1, "maxLength": 500 } },
+    "Uuid": { "type": "string", "format": "uuid" },
+
+    "ElementId": {
+      "type": "string",
+      "description": "Identifiant stable d'un élément verrouillable/commentable. Le préfixe indique le type.",
+      "pattern": "^(scene|enc|npc|loot|hook|aid)-[0-9]{1,3}$"
+    },
+    "SceneId": { "type": "string", "pattern": "^scene-[0-9]{1,3}$" },
+    "EncounterId": { "type": "string", "pattern": "^enc-[0-9]{1,3}$" },
+    "NpcId": { "type": "string", "pattern": "^npc-[0-9]{1,3}$" },
+    "LootId": { "type": "string", "pattern": "^loot-[0-9]{1,3}$" },
+    "HookId": { "type": "string", "pattern": "^hook-[0-9]{1,3}$" },
+    "AidId": { "type": "string", "pattern": "^aid-[0-9]{1,3}$" },
+
+    "Party": {
+      "type": "object", "additionalProperties": false,
+      "required": ["size", "level", "playerExperience"],
+      "properties": {
+        "size": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "level": { "type": ["integer", "null"], "minimum": 1, "maximum": 20, "description": "null en mode NARRATIF." },
+        "playerExperience": { "$ref": "#/$defs/PlayerExperience" }
+      }
+    },
+
+    "Hook": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": { "$ref": "#/$defs/HookId" },
+        "text": { "$ref": "#/$defs/Text" }
+      }
+    },
+
+    "Location": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "description"],
+      "properties": {
+        "name": { "$ref": "#/$defs/ShortText" },
+        "description": { "$ref": "#/$defs/Text" }
+      }
+    },
+
+    "Transition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["toSceneId", "condition"],
+      "properties": {
+        "toSceneId": { "$ref": "#/$defs/SceneId" },
+        "condition": { "type": "string", "minLength": 1, "maxLength": 300 }
+      }
+    },
+
+    "Scene": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "id", "order", "title", "type", "estimatedMinutes", "location", "readAloud", "summary",
+        "objectives", "clues", "npcIds", "encounterIds", "lootIds", "aidIds", "transitions", "gmTips", "fallback"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/SceneId" },
+        "order": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "title": { "$ref": "#/$defs/ShortText" },
+        "type": { "$ref": "#/$defs/SceneType" },
+        "estimatedMinutes": { "type": "integer", "minimum": 5, "maximum": 120 },
+        "location": { "$ref": "#/$defs/Location" },
+        "readAloud": { "type": ["string", "null"], "maxLength": 1500, "description": "Texte d'ambiance à lire aux joueurs." },
+        "summary": { "$ref": "#/$defs/Text" },
+        "objectives": { "type": "array", "minItems": 1, "maxItems": 5, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "clues": { "type": "array", "maxItems": 8, "items": { "type": "string", "minLength": 1, "maxLength": 300 } },
+        "npcIds": { "type": "array", "maxItems": 12, "uniqueItems": true, "items": { "$ref": "#/$defs/NpcId" } },
+        "encounterIds": { "type": "array", "maxItems": 4, "uniqueItems": true, "items": { "$ref": "#/$defs/EncounterId" } },
+        "lootIds": { "type": "array", "maxItems": 6, "uniqueItems": true, "items": { "$ref": "#/$defs/LootId" } },
+        "aidIds": { "type": "array", "maxItems": 4, "uniqueItems": true, "items": { "$ref": "#/$defs/AidId" } },
+        "transitions": { "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/Transition" } },
+        "gmTips": { "$ref": "#/$defs/TipList" },
+        "fallback": { "type": ["string", "null"], "maxLength": 800, "description": "Plan B si les joueurs bloquent." }
+      }
+    },
+
+    "Attack": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "bonus", "damage"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "bonus": { "type": "integer", "minimum": -5, "maximum": 20 },
+        "damage": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Ex. 2d6+3 tranchant" },
+        "description": { "type": ["string", "null"], "maxLength": 300 }
+      }
+    },
+
+    "Trait": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "description"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 400 }
+      }
+    },
+
+    "StatBlock": {
+      "type": "object", "additionalProperties": false,
+      "description": "Bloc de statistiques allégé, indépendant d'un système précis.",
+      "required": ["armorClass", "hitPoints", "speed", "attacks", "saveDc", "traits"],
+      "properties": {
+        "armorClass": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "hitPoints": { "type": "integer", "minimum": 1, "maximum": 999 },
+        "speed": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "attacks": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/Attack" } },
+        "saveDc": { "type": ["integer", "null"], "minimum": 5, "maximum": 30 },
+        "traits": { "type": "array", "maxItems": 6, "items": { "$ref": "#/$defs/Trait" } }
+      }
+    },
+
+    "Adversary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "count", "challengeRating", "customMonsterId", "statBlock", "tactics"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "count": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "challengeRating": { "oneOf": [{ "$ref": "#/$defs/ChallengeRating" }, { "type": "null" }] },
+        "customMonsterId": { "oneOf": [{ "$ref": "#/$defs/Uuid" }, { "type": "null" }] },
+        "statBlock": { "oneOf": [{ "$ref": "#/$defs/StatBlock" }, { "type": "null" }] },
+        "tactics": { "type": ["string", "null"], "maxLength": 600 }
+      }
+    },
+
+    "Encounter": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "sceneId", "title", "kind", "difficulty", "xpBudget", "adversaries", "description", "resolution", "gmTips"],
+      "properties": {
+        "id": { "$ref": "#/$defs/EncounterId" },
+        "sceneId": { "$ref": "#/$defs/SceneId" },
+        "title": { "$ref": "#/$defs/ShortText" },
+        "kind": { "$ref": "#/$defs/EncounterKind" },
+        "difficulty": { "$ref": "#/$defs/Difficulty" },
+        "xpBudget": { "type": ["integer", "null"], "minimum": 0, "description": "Renseigné uniquement en TYPE_5E, fixé par le moteur de règles." },
+        "adversaries": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/Adversary" } },
+        "description": { "$ref": "#/$defs/Text" },
+        "resolution": { "$ref": "#/$defs/Text" },
+        "gmTips": { "$ref": "#/$defs/TipList" }
+      }
+    },
+
+    "Npc": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "role", "description", "motivation", "secret", "roleplayTips", "customNpcId", "statBlock"],
+      "properties": {
+        "id": { "$ref": "#/$defs/NpcId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "role": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "$ref": "#/$defs/Text" },
+        "motivation": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "secret": { "type": ["string", "null"], "maxLength": 600 },
+        "roleplayTips": { "$ref": "#/$defs/TipList" },
+        "customNpcId": { "oneOf": [{ "$ref": "#/$defs/Uuid" }, { "type": "null" }] },
+        "statBlock": { "oneOf": [{ "$ref": "#/$defs/StatBlock" }, { "type": "null" }] }
+      }
+    },
+
+    "LootItem": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "description", "value", "rarity"],
+      "properties": {
+        "id": { "$ref": "#/$defs/LootId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "value": { "type": ["string", "null"], "maxLength": 60 },
+        "rarity": { "oneOf": [{ "$ref": "#/$defs/Rarity" }, { "type": "null" }] }
+      }
+    },
+
+    "PlayerAid": {
+      "type": "object", "additionalProperties": false,
+      "description": "Aide de jeu à lire ou montrer aux joueurs (rappel de règle, objectif, document).",
+      "required": ["id", "title", "text"],
+      "properties": {
+        "id": { "$ref": "#/$defs/AidId" },
+        "title": { "$ref": "#/$defs/ShortText" },
+        "text": { "$ref": "#/$defs/Text" }
+      }
+    },
+
+    "PlanElement": {
+      "description": "Élément unitaire, utilisé pour les relances et les modifications partielles.",
+      "oneOf": [
+        { "$ref": "#/$defs/Scene" },
+        { "$ref": "#/$defs/Encounter" },
+        { "$ref": "#/$defs/Npc" },
+        { "$ref": "#/$defs/LootItem" },
+        { "$ref": "#/$defs/Hook" },
+        { "$ref": "#/$defs/PlayerAid" }
+      ]
+    },
+
+    "PlanPatch": {
+      "type": "object", "additionalProperties": false,
+      "description": "Sortie de l'IA pour le chat et l'application des commentaires : seuls les éléments modifiés sont renvoyés.",
+      "required": ["reply", "upserts", "deletions"],
+      "properties": {
+        "reply": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "Réponse affichée dans le chat. Placée en premier pour le streaming." },
+        "upserts": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/PlanElement" } },
+        "deletions": { "type": "array", "maxItems": 10, "uniqueItems": true, "items": { "$ref": "#/$defs/ElementId" } }
+      }
+    }
+  }
+}

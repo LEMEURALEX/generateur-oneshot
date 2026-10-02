@@ -1,0 +1,1319 @@
+openapi: 3.1.0
+info:
+  title: OneShot API
+  version: 1.0.0
+  description: |
+    API REST du générateur de one-shots. Contrat de référence (approche contract-first, voir ADR-0002).
+
+    **Authentification** : `Authorization: Bearer <accessToken>` (JWT RS256, 15 min).
+    Le refresh token est un cookie `__Secure-refresh` (HttpOnly, Secure, SameSite=Strict, Path=/api/v1/auth).
+
+    **Rôles** : indiqués par l'extension `x-roles` sur chaque opération.
+
+    **Erreurs** : `application/problem+json` (RFC 9457), avec un `code` stable exploitable par le frontend.
+
+    **Langue** : l'en-tête `Accept-Language` (`fr` ou `en`) sélectionne la langue des messages d'erreur.
+
+    **Événements SSE** (`GET /jobs/{jobId}/events`) :
+    | event | data |
+    |---|---|
+    | `progress` | `JobProgressEvent` |
+    | `token` | `{ "text": "..." }` : fragment de la réponse du chat |
+    | `completed` | `Job` |
+    | `failed` | `Job` |
+    | `heartbeat` | `{}`, toutes les 15 s |
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+  - name: me
+  - name: oneshots
+  - name: refinement
+  - name: jobs
+  - name: library
+
+paths:
+  # ---------------------------------------------------------------- auth
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Créer un compte (convertit la session anonyme si un jeton anonyme est fourni)
+      security: [{}, {bearerAuth: []}]
+      x-roles: [PUBLIC, ANONYMOUS]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Compte créé, session ouverte
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Se connecter (transfère le one-shot anonyme si un jeton anonyme est fourni)
+      security: [{}, {bearerAuth: []}]
+      x-roles: [PUBLIC, ANONYMOUS]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Session ouverte
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/anonymous:
+    post:
+      tags: [auth]
+      operationId: startAnonymousSession
+      summary: Ouvrir une session anonyme (après vérification anti-robot)
+      security: [{}]
+      x-roles: [PUBLIC]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnonymousSessionRequest' }
+      responses:
+        '201':
+          description: Session anonyme ouverte
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refresh
+      summary: Renouveler le jeton d'accès (rotation du refresh token)
+      description: |
+        Nécessite le cookie de refresh et l'en-tête `X-Requested-With: fetch` (protection CSRF complémentaire).
+        La réutilisation d'un refresh token déjà consommé révoque toute sa famille.
+      security: [{refreshCookie: []}]
+      x-roles: [PUBLIC]
+      parameters:
+        - in: header
+          name: X-Requested-With
+          required: true
+          schema: { type: string, const: fetch }
+      responses:
+        '200':
+          description: Nouveau jeton
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Révoquer la famille du refresh token courant
+      security: [{refreshCookie: []}]
+      x-roles: [PUBLIC]
+      parameters:
+        - in: header
+          name: X-Requested-With
+          required: true
+          schema: { type: string, const: fetch }
+      responses:
+        '204':
+          description: Déconnecté, cookie effacé
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+
+  # ---------------------------------------------------------------- me
+  /me:
+    get:
+      tags: [me]
+      operationId: getProfile
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '200':
+          description: Profil courant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [me]
+      operationId: updateProfile
+      x-roles: [USER, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
+      responses:
+        '200':
+          description: Profil mis à jour
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [me]
+      operationId: deleteAccount
+      summary: Supprimer le compte et toutes les données associées (RGPD)
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '204':
+          description: Compte supprimé
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/RefreshCookie' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ---------------------------------------------------------------- oneshots
+  /oneshots:
+    post:
+      tags: [oneshots]
+      operationId: createOneShot
+      summary: Demander la génération d'un one-shot (asynchrone)
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerationRequest' }
+      responses:
+        '202':
+          description: Génération mise en file d'attente
+          headers:
+            Location:
+              description: URL du job
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedJob' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+    get:
+      tags: [oneshots]
+      operationId: listOneShots
+      summary: Bibliothèque de one-shots
+      x-roles: [USER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - in: query
+          name: sort
+          schema: { type: string, enum: ['updatedAt,desc', 'updatedAt,asc', 'title,asc', 'title,desc'], default: 'updatedAt,desc' }
+        - in: query
+          name: q
+          description: Recherche approximative sur le titre
+          schema: { type: string, maxLength: 100 }
+        - in: query
+          name: tone
+          schema: { $ref: '../schemas/plan.schema.json#/$defs/Tone' }
+        - in: query
+          name: durationMinutes
+          schema: { $ref: '../schemas/plan.schema.json#/$defs/DurationMinutes' }
+      responses:
+        '200':
+          description: Page de one-shots
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OneShotPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /oneshots/current-anonymous:
+    get:
+      tags: [oneshots]
+      operationId: getAnonymousOneShot
+      summary: One-shot actif de la session anonyme
+      x-roles: [ANONYMOUS]
+      responses:
+        '200':
+          description: One-shot actif
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OneShotDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /oneshots/{oneshotId}:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+    get:
+      tags: [oneshots]
+      operationId: getOneShot
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '200':
+          description: One-shot et version courante
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OneShotDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [oneshots]
+      operationId: deleteOneShot
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '204': { description: Supprimé }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /oneshots/{oneshotId}/pdf:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+    get:
+      tags: [oneshots]
+      operationId: exportPdf
+      summary: Export PDF imprimable (généré à la demande)
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      parameters:
+        - in: query
+          name: version
+          description: Numéro de version, version courante par défaut
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Document PDF
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /oneshots/{oneshotId}/versions:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+    get:
+      tags: [refinement]
+      operationId: listVersions
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '200':
+          description: Historique des versions, de la plus récente à la plus ancienne
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VersionSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /oneshots/{oneshotId}/versions/{versionNumber}:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+      - $ref: '#/components/parameters/VersionNumber'
+    get:
+      tags: [refinement]
+      operationId: getVersion
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '200':
+          description: Version complète
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanVersion' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /oneshots/{oneshotId}/versions/{versionNumber}/restore:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+      - $ref: '#/components/parameters/VersionNumber'
+    post:
+      tags: [refinement]
+      operationId: restoreVersion
+      summary: Créer une nouvelle version identique à une version antérieure
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '201':
+          description: Nouvelle version créée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /oneshots/{oneshotId}/locks/{elementId}:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+      - $ref: '#/components/parameters/ElementId'
+    put:
+      tags: [refinement]
+      operationId: lockElement
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '204': { description: Élément verrouillé (idempotent) }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [refinement]
+      operationId: unlockElement
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '204': { description: Élément déverrouillé (idempotent) }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /oneshots/{oneshotId}/elements/{elementId}/reroll:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+      - $ref: '#/components/parameters/ElementId'
+    post:
+      tags: [refinement]
+      operationId: rerollElement
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RerollRequest' }
+      responses:
+        '202':
+          description: Relance mise en file d'attente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /oneshots/{oneshotId}/comments:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+    get:
+      tags: [refinement]
+      operationId: listComments
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      parameters:
+        - in: query
+          name: status
+          schema: { $ref: '#/components/schemas/CommentStatus' }
+      responses:
+        '200':
+          description: Commentaires
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Comment' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [refinement]
+      operationId: addComment
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommentRequest' }
+      responses:
+        '201':
+          description: Commentaire ajouté (statut PENDING)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Comment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /oneshots/{oneshotId}/comments/{commentId}:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+      - in: path
+        name: commentId
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [refinement]
+      operationId: deleteComment
+      summary: Supprimer un commentaire en attente
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '204': { description: Supprimé }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /oneshots/{oneshotId}/comments/apply:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+    post:
+      tags: [refinement]
+      operationId: applyComments
+      summary: Appliquer tous les commentaires en attente (asynchrone)
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Application mise en file d'attente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /oneshots/{oneshotId}/chat:
+    parameters:
+      - $ref: '#/components/parameters/OneShotId'
+    get:
+      tags: [refinement]
+      operationId: listChatMessages
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '200':
+          description: Conversation, ordre chronologique
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChatMessage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [refinement]
+      operationId: sendChatMessage
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatRequest' }
+      responses:
+        '202':
+          description: Message enregistré, réponse de l'IA mise en file d'attente
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AcceptedJob' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  # ---------------------------------------------------------------- jobs
+  /jobs/{jobId}:
+    parameters:
+      - $ref: '#/components/parameters/JobId'
+    get:
+      tags: [jobs]
+      operationId: getJob
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '200':
+          description: État du job
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /jobs/{jobId}/events:
+    parameters:
+      - $ref: '#/components/parameters/JobId'
+    get:
+      tags: [jobs]
+      operationId: streamJobEvents
+      summary: Flux SSE de progression (le premier événement reflète l'état courant)
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      parameters:
+        - in: header
+          name: Last-Event-ID
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: Flux Server-Sent Events
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /jobs/{jobId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/JobId'
+    post:
+      tags: [jobs]
+      operationId: cancelJob
+      x-roles: [ANONYMOUS, USER, ADMIN]
+      responses:
+        '202':
+          description: Annulation demandée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ---------------------------------------------------------------- library
+  /library/monsters:
+    get:
+      tags: [library]
+      operationId: listMonsters
+      x-roles: [USER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/NameFilter'
+      responses:
+        '200':
+          description: Page de monstres
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MonsterPage' }
+    post:
+      tags: [library]
+      operationId: createMonster
+      x-roles: [USER, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MonsterRequest' }
+      responses:
+        '201':
+          description: Créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Monster' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /library/monsters/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [library]
+      operationId: getMonster
+      x-roles: [USER, ADMIN]
+      responses:
+        '200':
+          description: Monstre
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Monster' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [library]
+      operationId: updateMonster
+      x-roles: [USER, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MonsterRequest' }
+      responses:
+        '200':
+          description: Mis à jour
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Monster' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [library]
+      operationId: deleteMonster
+      x-roles: [USER, ADMIN]
+      responses:
+        '204': { description: Supprimé }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /library/npcs:
+    get:
+      tags: [library]
+      operationId: listNpcs
+      x-roles: [USER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/NameFilter'
+      responses:
+        '200':
+          description: Page de PNJ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomNpcPage' }
+    post:
+      tags: [library]
+      operationId: createNpc
+      x-roles: [USER, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomNpcRequest' }
+      responses:
+        '201':
+          description: Créé
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomNpc' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /library/npcs/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [library]
+      operationId: getNpc
+      x-roles: [USER, ADMIN]
+      responses:
+        '200':
+          description: PNJ
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomNpc' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [library]
+      operationId: updateNpc
+      x-roles: [USER, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomNpcRequest' }
+      responses:
+        '200':
+          description: Mis à jour
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomNpc' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [library]
+      operationId: deleteNpc
+      x-roles: [USER, ADMIN]
+      responses:
+        '204': { description: Supprimé }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /library/tables:
+    get:
+      tags: [library]
+      operationId: listRandomTables
+      x-roles: [USER, ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/NameFilter'
+      responses:
+        '200':
+          description: Page de tables aléatoires
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RandomTablePage' }
+    post:
+      tags: [library]
+      operationId: createRandomTable
+      x-roles: [USER, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RandomTableRequest' }
+      responses:
+        '201':
+          description: Créée
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RandomTable' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /library/tables/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [library]
+      operationId: getRandomTable
+      x-roles: [USER, ADMIN]
+      responses:
+        '200':
+          description: Table aléatoire
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RandomTable' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [library]
+      operationId: updateRandomTable
+      x-roles: [USER, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RandomTableRequest' }
+      responses:
+        '200':
+          description: Mise à jour (les entrées sont remplacées)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RandomTable' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [library]
+      operationId: deleteRandomTable
+      x-roles: [USER, ADMIN]
+      responses:
+        '204': { description: Supprimée }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: __Secure-refresh
+
+  headers:
+    RefreshCookie:
+      description: '`__Secure-refresh=<opaque>; Path=/api/v1/auth; HttpOnly; Secure; SameSite=Strict; Max-Age=...`'
+      schema: { type: string }
+
+  parameters:
+    OneShotId:
+      in: path
+      name: oneshotId
+      required: true
+      schema: { type: string, format: uuid }
+    JobId:
+      in: path
+      name: jobId
+      required: true
+      schema: { type: string, format: uuid }
+    ItemId:
+      in: path
+      name: itemId
+      required: true
+      schema: { type: string, format: uuid }
+    VersionNumber:
+      in: path
+      name: versionNumber
+      required: true
+      schema: { type: integer, minimum: 1 }
+    ElementId:
+      in: path
+      name: elementId
+      required: true
+      schema: { $ref: '../schemas/plan.schema.json#/$defs/ElementId' }
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      description: UUID généré par le client ; une requête rejouée renvoie le même job.
+      schema: { type: string, format: uuid }
+    Page:
+      in: query
+      name: page
+      schema: { type: integer, minimum: 0, default: 0 }
+    Size:
+      in: query
+      name: size
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+    NameFilter:
+      in: query
+      name: name
+      schema: { type: string, maxLength: 100 }
+
+  responses:
+    BadRequest:
+      description: Requête invalide
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Authentification requise ou invalide
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Droits insuffisants (ex. fonctionnalité réservée aux comptes)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Ressource inexistante ou n'appartenant pas à l'utilisateur
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflit d'état (job déjà actif, version obsolète, email déjà utilisé, one-shot anonyme existant)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Quota ou limite de débit atteint
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    # ------------------------------------------------------------ commun
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          description: Code stable, ex. VALIDATION_FAILED, EMAIL_ALREADY_USED, INVALID_CREDENTIALS, JOB_ALREADY_ACTIVE,
+            ANONYMOUS_ONESHOT_EXISTS, QUOTA_EXCEEDED, RATE_LIMITED, CAPTCHA_FAILED, STALE_VERSION, NOT_FOUND
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+    PageMetadata:
+      type: object
+      required: [number, size, totalElements, totalPages]
+      properties:
+        number: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+
+    Locale:
+      $ref: '../schemas/plan.schema.json#/$defs/Language'
+
+    # ------------------------------------------------------------ auth
+    RegisterRequest:
+      type: object
+      required: [email, password, preferredLocale, captchaToken]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+        preferredLocale: { $ref: '#/components/schemas/Locale' }
+        captchaToken: { type: string, maxLength: 2048 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, maxLength: 128, writeOnly: true }
+
+    AnonymousSessionRequest:
+      type: object
+      required: [captchaToken, preferredLocale]
+      properties:
+        captchaToken: { type: string, maxLength: 2048 }
+        preferredLocale: { $ref: '#/components/schemas/Locale' }
+
+    TokenResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, user]
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, const: Bearer }
+        expiresIn: { type: integer, description: Durée de validité en secondes }
+        user: { $ref: '#/components/schemas/UserProfile' }
+
+    Role:
+      type: string
+      enum: [ANONYMOUS, USER, ADMIN]
+
+    UserProfile:
+      type: object
+      required: [id, role, email, preferredLocale, quota]
+      properties:
+        id: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/Role' }
+        email: { type: [string, 'null'], format: email }
+        preferredLocale: { $ref: '#/components/schemas/Locale' }
+        quota:
+          type: object
+          required: [dailyGenerations, usedToday]
+          properties:
+            dailyGenerations: { type: integer }
+            usedToday: { type: integer }
+
+    UpdateProfileRequest:
+      type: object
+      required: [preferredLocale]
+      properties:
+        preferredLocale: { $ref: '#/components/schemas/Locale' }
+
+    # ------------------------------------------------------------ génération
+    Balance:
+      type: object
+      description: Répartition en pourcentage ; la somme doit valoir 100 (vérifié côté serveur).
+      required: [combat, exploration, roleplay]
+      properties:
+        combat: { type: integer, minimum: 0, maximum: 100 }
+        exploration: { type: integer, minimum: 0, maximum: 100 }
+        roleplay: { type: integer, minimum: 0, maximum: 100 }
+
+    CustomContentSelection:
+      type: object
+      description: Réservé aux comptes USER/ADMIN (403 pour ANONYMOUS si non vide).
+      properties:
+        monsterIds: { type: array, maxItems: 20, uniqueItems: true, items: { type: string, format: uuid } }
+        npcIds: { type: array, maxItems: 20, uniqueItems: true, items: { type: string, format: uuid } }
+        tableIds: { type: array, maxItems: 10, uniqueItems: true, items: { type: string, format: uuid } }
+
+    GenerationRequest:
+      type: object
+      required:
+        [description, ruleSystem, characterLevel, partySize, durationMinutes, tones, environment,
+         balance, gmExperience, playerExperience, language]
+      properties:
+        description: { type: string, minLength: 10, maxLength: 2000 }
+        ruleSystem: { $ref: '../schemas/plan.schema.json#/$defs/RuleSystem' }
+        characterLevel:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 20
+          description: Obligatoire sauf en NARRATIF.
+        partySize: { type: integer, minimum: 1, maximum: 8 }
+        durationMinutes: { $ref: '../schemas/plan.schema.json#/$defs/DurationMinutes' }
+        tones:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { $ref: '../schemas/plan.schema.json#/$defs/Tone' }
+        environment: { $ref: '../schemas/plan.schema.json#/$defs/Environment' }
+        balance: { $ref: '#/components/schemas/Balance' }
+        gmExperience: { $ref: '../schemas/plan.schema.json#/$defs/GmExperience' }
+        playerExperience: { $ref: '../schemas/plan.schema.json#/$defs/PlayerExperience' }
+        customContent: { $ref: '#/components/schemas/CustomContentSelection' }
+        language: { $ref: '#/components/schemas/Locale' }
+        seed: { type: [integer, 'null'], format: int64, description: Aléatoire si absent. }
+
+    JobType:
+      type: string
+      enum: [GENERATE, REROLL, APPLY_COMMENTS, CHAT]
+
+    JobStatus:
+      type: string
+      enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+
+    JobStep:
+      type: string
+      enum: [QUEUED, BUILDING_SKELETON, WRITING_FRAME, WRITING_SCENES, EDITING, VALIDATING, SAVING]
+
+    AcceptedJob:
+      type: object
+      required: [oneshotId, jobId, status]
+      properties:
+        oneshotId: { type: string, format: uuid }
+        jobId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/JobStatus' }
+
+    Job:
+      type: object
+      required: [id, oneshotId, type, status, step, progress, queuePosition, resultVersion, error, createdAt, startedAt, finishedAt]
+      properties:
+        id: { type: string, format: uuid }
+        oneshotId: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/JobType' }
+        status: { $ref: '#/components/schemas/JobStatus' }
+        step: { oneOf: [{ $ref: '#/components/schemas/JobStep' }, { type: 'null' }] }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        queuePosition: { type: [integer, 'null'], description: Renseigné si QUEUED }
+        resultVersion: { type: [integer, 'null'] }
+        error:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [code, message]
+              properties:
+                code: { type: string }
+                message: { type: string }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+
+    JobProgressEvent:
+      type: object
+      required: [step, progress]
+      properties:
+        step: { $ref: '#/components/schemas/JobStep' }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        detail:
+          type: [string, 'null']
+          description: Ex. "3/5" pendant WRITING_SCENES
+        queuePosition: { type: [integer, 'null'] }
+
+    # ------------------------------------------------------------ one-shots
+    OneShotSummary:
+      type: object
+      required: [id, title, language, ruleSystem, tones, durationMinutes, currentVersion, generating, updatedAt, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: [string, 'null'] }
+        language: { $ref: '#/components/schemas/Locale' }
+        ruleSystem: { $ref: '../schemas/plan.schema.json#/$defs/RuleSystem' }
+        tones:
+          type: array
+          items: { $ref: '../schemas/plan.schema.json#/$defs/Tone' }
+        durationMinutes: { $ref: '../schemas/plan.schema.json#/$defs/DurationMinutes' }
+        currentVersion: { type: [integer, 'null'] }
+        generating: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+
+    OneShotPage:
+      type: object
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/OneShotSummary' }
+        page: { $ref: '#/components/schemas/PageMetadata' }
+
+    OneShotDetail:
+      type: object
+      required: [id, parameters, currentVersion, plan, locks, pendingComments, activeJob, createdAt, updatedAt, expiresAt]
+      properties:
+        id: { type: string, format: uuid }
+        parameters: { $ref: '#/components/schemas/GenerationRequest' }
+        currentVersion: { type: [integer, 'null'] }
+        plan:
+          oneOf:
+            - $ref: '../schemas/plan.schema.json'
+            - type: 'null'
+        locks:
+          type: array
+          items: { $ref: '../schemas/plan.schema.json#/$defs/ElementId' }
+        pendingComments: { type: integer, minimum: 0 }
+        activeJob:
+          oneOf:
+            - $ref: '#/components/schemas/Job'
+            - type: 'null'
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+
+    VersionOperation:
+      type: string
+      enum: [GENERATE, REROLL, APPLY_COMMENTS, CHAT, RESTORE]
+
+    VersionSummary:
+      type: object
+      required: [number, operation, summary, current, createdAt]
+      properties:
+        number: { type: integer, minimum: 1 }
+        operation: { $ref: '#/components/schemas/VersionOperation' }
+        summary: { type: [string, 'null'] }
+        current: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    PlanVersion:
+      type: object
+      required: [number, operation, summary, seed, engineVersion, model, createdAt, plan]
+      properties:
+        number: { type: integer, minimum: 1 }
+        operation: { $ref: '#/components/schemas/VersionOperation' }
+        summary: { type: [string, 'null'] }
+        seed: { type: [integer, 'null'], format: int64 }
+        engineVersion: { type: string }
+        model: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        plan: { $ref: '../schemas/plan.schema.json' }
+
+    # ------------------------------------------------------------ affinage
+    RerollRequest:
+      type: object
+      properties:
+        instruction:
+          type: string
+          maxLength: 500
+          description: Consigne optionnelle, ex. "plus menaçant"
+
+    CommentStatus:
+      type: string
+      enum: [PENDING, APPLIED]
+
+    CommentRequest:
+      type: object
+      required: [elementId, body]
+      properties:
+        elementId: { $ref: '../schemas/plan.schema.json#/$defs/ElementId' }
+        body: { type: string, minLength: 1, maxLength: 1000 }
+
+    Comment:
+      type: object
+      required: [id, elementId, body, status, appliedInVersion, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        elementId: { $ref: '../schemas/plan.schema.json#/$defs/ElementId' }
+        body: { type: string }
+        status: { $ref: '#/components/schemas/CommentStatus' }
+        appliedInVersion: { type: [integer, 'null'] }
+        createdAt: { type: string, format: date-time }
+
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 2000 }
+
+    ChatMessage:
+      type: object
+      required: [id, role, content, versionNumber, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [USER, ASSISTANT] }
+        content: { type: string }
+        versionNumber: { type: [integer, 'null'] }
+        createdAt: { type: string, format: date-time }
+
+    # ------------------------------------------------------------ bibliothèque
+    MonsterRequest:
+      type: object
+      required: [name, description]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, minLength: 1, maxLength: 2000 }
+        challengeRating:
+          oneOf:
+            - $ref: '../schemas/plan.schema.json#/$defs/ChallengeRating'
+            - type: 'null'
+        statBlock:
+          oneOf:
+            - $ref: '../schemas/plan.schema.json#/$defs/StatBlock'
+            - type: 'null'
+        version: { type: integer, format: int64, description: Obligatoire en mise à jour (verrouillage optimiste) }
+
+    Monster:
+      allOf:
+        - $ref: '#/components/schemas/MonsterRequest'
+        - type: object
+          required: [id, version, createdAt, updatedAt]
+          properties:
+            id: { type: string, format: uuid }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    MonsterPage:
+      type: object
+      required: [content, page]
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/Monster' } }
+        page: { $ref: '#/components/schemas/PageMetadata' }
+
+    CustomNpcRequest:
+      type: object
+      required: [name, role, description]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        role: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, minLength: 1, maxLength: 2000 }
+        motivation: { type: [string, 'null'], maxLength: 600 }
+        statBlock:
+          oneOf:
+            - $ref: '../schemas/plan.schema.json#/$defs/StatBlock'
+            - type: 'null'
+        version: { type: integer, format: int64 }
+
+    CustomNpc:
+      allOf:
+        - $ref: '#/components/schemas/CustomNpcRequest'
+        - type: object
+          required: [id, version, createdAt, updatedAt]
+          properties:
+            id: { type: string, format: uuid }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    CustomNpcPage:
+      type: object
+      required: [content, page]
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/CustomNpc' } }
+        page: { $ref: '#/components/schemas/PageMetadata' }
+
+    RandomTableEntry:
+      type: object
+      required: [weight, content]
+      properties:
+        weight: { type: integer, minimum: 1, maximum: 100 }
+        content: { type: string, minLength: 1, maxLength: 500 }
+
+    RandomTableRequest:
+      type: object
+      required: [name, entries]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: [string, 'null'], maxLength: 500 }
+        entries:
+          type: array
+          minItems: 2
+          maxItems: 100
+          description: L'ordre du tableau définit la position des entrées.
+          items: { $ref: '#/components/schemas/RandomTableEntry' }
+        version: { type: integer, format: int64 }
+
+    RandomTable:
+      allOf:
+        - $ref: '#/components/schemas/RandomTableRequest'
+        - type: object
+          required: [id, version, createdAt, updatedAt]
+          properties:
+            id: { type: string, format: uuid }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    RandomTablePage:
+      type: object
+      required: [content, page]
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/RandomTable' } }
+        page: { $ref: '#/components/schemas/PageMetadata' }
