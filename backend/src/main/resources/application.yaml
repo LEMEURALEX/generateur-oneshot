@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: backend
+  datasource:
+    username: oneshot
+    password: oneshot_dev_only
+    url: jdbc:postgresql://localhost:5432/oneshot
