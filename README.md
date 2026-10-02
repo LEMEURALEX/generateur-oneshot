@@ -18,7 +18,7 @@ Le projet combine un moteur de règles déterministe et une IA locale pour produ
 - IA locale : Ollama
 
 ## Documentation
-Les instructions seront ajoutées davec les fichiers de configuration du projet.
+Les instructions seront ajoutées avec les fichiers de configuration du projet.
 
 ## Sécurité et contenu
 Ne jamais versionner de secrets ou de fichiers '.env'.
