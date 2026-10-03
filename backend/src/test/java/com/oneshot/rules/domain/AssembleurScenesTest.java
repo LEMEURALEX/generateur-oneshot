@@ -25,7 +25,7 @@ public class AssembleurScenesTest {
     }
 
     @Test
-    void refuseSiNombreSceneInferieurOrEgaleZero() {
+    void refuseSiModificationListe() {
         List<TypeScene> listTypeScenes = assembleurScenes.assembler(new ComptageScenes(2, 2, 1));
 
         assertThrows(UnsupportedOperationException.class, () -> listTypeScenes.add(TypeScene.ROLEPLAY));
