@@ -157,6 +157,7 @@ paths:
     get:
       tags: [me]
       operationId: getProfile
+      summary: Lire le profil courant
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '200':
@@ -168,6 +169,7 @@ paths:
     patch:
       tags: [me]
       operationId: updateProfile
+      summary: Mettre a jour le profil
       x-roles: [USER, ADMIN]
       requestBody:
         required: true
@@ -274,6 +276,7 @@ paths:
     get:
       tags: [oneshots]
       operationId: getOneShot
+      summary: Consulter un one-shot
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '200':
@@ -289,6 +292,7 @@ paths:
     delete:
       tags: [oneshots]
       operationId: deleteOneShot
+      summary: Supprimer un one-shot
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '204': { description: Supprimé }
@@ -327,6 +331,7 @@ paths:
     get:
       tags: [refinement]
       operationId: listVersions
+      summary: Verrouiller un élément
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '200':
@@ -345,6 +350,7 @@ paths:
     get:
       tags: [refinement]
       operationId: getVersion
+      summary: Consulter une version
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '200':
@@ -379,6 +385,7 @@ paths:
     put:
       tags: [refinement]
       operationId: lockElement
+      summary: Verrouiller un élément
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '204': { description: Élément verrouillé (idempotent) }
@@ -386,6 +393,7 @@ paths:
     delete:
       tags: [refinement]
       operationId: unlockElement
+      summary: Déverrouiller un élément
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '204': { description: Élément déverrouillé (idempotent) }
@@ -398,6 +406,7 @@ paths:
     post:
       tags: [refinement]
       operationId: rerollElement
+      summary: Relancer un élément
       x-roles: [ANONYMOUS, USER, ADMIN]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -422,6 +431,7 @@ paths:
     get:
       tags: [refinement]
       operationId: listComments
+      summary: Lister les commentaires
       x-roles: [ANONYMOUS, USER, ADMIN]
       parameters:
         - in: query
@@ -439,6 +449,7 @@ paths:
     post:
       tags: [refinement]
       operationId: addComment
+      summary: Ajouter un commentaire
       x-roles: [ANONYMOUS, USER, ADMIN]
       requestBody:
         required: true
@@ -497,6 +508,7 @@ paths:
     get:
       tags: [refinement]
       operationId: listChatMessages
+      summary: Consulter l'historique du chat
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '200':
@@ -510,6 +522,7 @@ paths:
     post:
       tags: [refinement]
       operationId: sendChatMessage
+      summary: Envoyer un message au chat IA
       x-roles: [ANONYMOUS, USER, ADMIN]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -536,6 +549,7 @@ paths:
     get:
       tags: [jobs]
       operationId: getJob
+      summary: Consulter l'état d'un job
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '200':
@@ -572,6 +586,7 @@ paths:
     post:
       tags: [jobs]
       operationId: cancelJob
+      summary: Annuler un job
       x-roles: [ANONYMOUS, USER, ADMIN]
       responses:
         '202':
@@ -587,6 +602,7 @@ paths:
     get:
       tags: [library]
       operationId: listMonsters
+      summary: Lister les monstres personnels
       x-roles: [USER, ADMIN]
       parameters:
         - $ref: '#/components/parameters/Page'
@@ -601,6 +617,7 @@ paths:
     post:
       tags: [library]
       operationId: createMonster
+      summary: Créer un monstre personnel
       x-roles: [USER, ADMIN]
       requestBody:
         required: true
@@ -621,6 +638,7 @@ paths:
     get:
       tags: [library]
       operationId: getMonster
+      summary: Consulter un monstre personnel
       x-roles: [USER, ADMIN]
       responses:
         '200':
@@ -632,6 +650,7 @@ paths:
     put:
       tags: [library]
       operationId: updateMonster
+      summary: Modifier un monstre personnel
       x-roles: [USER, ADMIN]
       requestBody:
         required: true
@@ -650,6 +669,7 @@ paths:
     delete:
       tags: [library]
       operationId: deleteMonster
+      summary: Supprimer un monstre personnel
       x-roles: [USER, ADMIN]
       responses:
         '204': { description: Supprimé }
@@ -659,6 +679,7 @@ paths:
     get:
       tags: [library]
       operationId: listNpcs
+      summary: Lister les PNJ personnels
       x-roles: [USER, ADMIN]
       parameters:
         - $ref: '#/components/parameters/Page'
@@ -673,6 +694,7 @@ paths:
     post:
       tags: [library]
       operationId: createNpc
+      summary: Créer un PNJ personnel
       x-roles: [USER, ADMIN]
       requestBody:
         required: true
@@ -693,6 +715,7 @@ paths:
     get:
       tags: [library]
       operationId: getNpc
+      summary: Consulter un PNJ personnel
       x-roles: [USER, ADMIN]
       responses:
         '200':
@@ -704,6 +727,7 @@ paths:
     put:
       tags: [library]
       operationId: updateNpc
+      summary: Modifier un PNJ personnel
       x-roles: [USER, ADMIN]
       requestBody:
         required: true
@@ -722,6 +746,7 @@ paths:
     delete:
       tags: [library]
       operationId: deleteNpc
+      summary: Supprimer un PNJ personnel
       x-roles: [USER, ADMIN]
       responses:
         '204': { description: Supprimé }
@@ -731,6 +756,7 @@ paths:
     get:
       tags: [library]
       operationId: listRandomTables
+      summary: Lister les tables aléatoires
       x-roles: [USER, ADMIN]
       parameters:
         - $ref: '#/components/parameters/Page'
@@ -745,6 +771,7 @@ paths:
     post:
       tags: [library]
       operationId: createRandomTable
+      summary: Créer une table aléatoire
       x-roles: [USER, ADMIN]
       requestBody:
         required: true
@@ -765,6 +792,7 @@ paths:
     get:
       tags: [library]
       operationId: getRandomTable
+      summary: Consulter une table aléatoire
       x-roles: [USER, ADMIN]
       responses:
         '200':
@@ -776,6 +804,7 @@ paths:
     put:
       tags: [library]
       operationId: updateRandomTable
+      summary: Modifier une table aléatoire
       x-roles: [USER, ADMIN]
       requestBody:
         required: true
@@ -794,6 +823,7 @@ paths:
     delete:
       tags: [library]
       operationId: deleteRandomTable
+      summary: Supprimer une table aléatoire
       x-roles: [USER, ADMIN]
       responses:
         '204': { description: Supprimée }
