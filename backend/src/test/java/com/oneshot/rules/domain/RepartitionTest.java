@@ -18,12 +18,11 @@ public class RepartitionTest {
         assertDoesNotThrow(() -> new Repartition(0, 100, 0));
         assertDoesNotThrow(() -> new Repartition(0, 0, 100));
     }
-
+    
     @Test
     void refuseUneSommeDe99() {
         assertThrows(IllegalArgumentException.class,
             () -> new Repartition(40, 30, 29));
-    
     }
 
     @Test
