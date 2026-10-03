@@ -20,7 +20,7 @@ public class PolitiqueRepartitionScenesTest {
     }
 
     @Test
-    void refuseSiNombreSceneInferieurOrEqualsZero() {
+    void refuseSiNombreSceneInferieurOrEgaleZero() {
         assertThrows(IllegalArgumentException.class, () -> 
             verifierRepartition(0, new Repartition(40, 30, 30), new ComptageScenes(2, 2, 1)));
         assertThrows(IllegalArgumentException.class, () -> 
