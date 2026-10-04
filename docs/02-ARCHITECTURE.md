@@ -14,7 +14,7 @@ Il s'appuie sur la [définition du produit](01-DEFINITION-PRODUIT.md).
 
 | N° | Décision |
 |---|---|
-| [0001](docs/adr/0001-monolithe-modulaire-monorepo.md) | Monolithe modulaire dans un monorepo, frontières vérifiées par ArchUnit |
+| [0001](docs/adr/0001-monolithe-modulaire-monorepo.md) | Décision initiale remplacé par l'ADR-0010 |
 | [0002](docs/adr/0002-contract-first-openapi.md) | Contrat d'API d'abord (OpenAPI 3.1 et JSON Schema), génération de code |
 | [0003](docs/adr/0003-authentification-jwt.md) | JWT RS256, refresh token rotatif en cookie, mode anonyme convertible |
 | [0004](docs/adr/0004-generation-hybride-regles-ia.md) | Moteur de règles déterministe et IA locale découpée en plusieurs appels, modifications par patch |
@@ -23,6 +23,7 @@ Il s'appuie sur la [définition du produit](01-DEFINITION-PRODUIT.md).
 | [0007](docs/adr/0007-export-pdf.md) | PDF côté serveur avec Thymeleaf et openhtmltopdf |
 | [0008](docs/adr/0008-hebergement-et-cicd.md) | Oracle Cloud Always Free, Docker Compose, Caddy, GitHub Actions |
 | [0009](docs/adr/0009-strategie-qualite.md) | Seuils de qualité bloquants |
+| [0010](docs/adr/0010-architecture-en-couches.md) | Monolithe en couches techniques globales, contrats de service et migration du code |
 
 ---
 
@@ -46,14 +47,13 @@ flowchart LR
 oneshot/
 ├── backend/                 Maven, Java 25, Spring Boot 4.x
 │   └── src/main/java/com/oneshot/
-│       ├── identity/        comptes, JWT, refresh tokens, anonyme, quotas
-│       ├── generation/      API de génération, file de jobs, worker, SSE
-│       ├── rules/           moteur de règles pur (sans Spring), graine, tables
-│       ├── ai/              port NarrativeGenerator, adaptateur Spring AI/Ollama, prompts, validation
-│       ├── plan/            one-shots, versions, verrous, commentaires, chat, LockGuard
-│       ├── library/         monstres, PNJ, tables aléatoires personnels
-│       ├── export/          PDF
-│       └── shared/          erreurs (ProblemDetail), i18n, sécurité, horloge, configuration
+│       ├── controller/      entrées HTTP et gélégation
+│       ├── dto/             contrats d'entrée et de sortie
+│       ├── mapper/          conversions entre contrats et modèles
+│       ├── model/           objets-valeurs et modèles de persistance distincts
+│       ├── service/         interfaces des services
+│       ├── implementation/  implémentations et politiques métier
+│       └── repository/      accès aux données persistées
 ├── frontend/                Vite, React, TypeScript
 │   └── src/
 │       ├── app/             routeur, providers, layout
@@ -69,18 +69,9 @@ oneshot/
 ├── docs/                    ce dossier (ADR, API, schémas, base de données)
 └── .github/workflows/       ci.yml, e2e.yml, release.yml, backup-restore-test.yml
 ```
+Cette arborescence est la cible acceptée dans l'ADR-0010.
 
-Chaque module backend suit la même structure :
-
-```text
-<module>/
-├── api/        interfaces et DTO exposés aux autres modules
-├── web/        contrôleurs (implémentent les interfaces générées depuis OpenAPI)
-├── domain/     logique métier, entités JPA internes
-└── infra/      repositories, adaptateurs externes
-```
-
-## 3. Dépendances entre modules
+## 3. Dépendances entre fonctionnalités
 
 ```mermaid
 flowchart TD
@@ -98,8 +89,15 @@ flowchart TD
     end
 ```
 
-Il n'y a ni cycle ni dépendance vers les parties internes (`internal`) d'un autre module, et
-`rules` ne dépend de rien. Ces règles sont vérifiées par ArchUnit.
+Le diagramme décrit les collaborations métier, pas des packages racines à créer.
+Les fonctionnalités communiquent via les interfaces de service et leurs contrats.
+Les controllers n'accèdent pas directement aux repositories, les mapper ne portent
+pas la logique métier. Les dépendances cycliques entre fonctionnalités sont interdites.
+Le moteur de règles, ses modèles et ses contrats restent en Java pur : aucune dépendance
+à Spring, JPA, aux repositories ou aux DTO OpenApi. Ces contraintes seront vérifiées par
+ArchUnit sur les types concernés, et non sur un ancien package `rules` inexistant après
+migration. LEs classes Spring ou JPA d'autres fonctionnalités ne changent pas cette
+contrainte. L'ADR-0010 précise le plan de migration et les destinations.
 
 ## 4. Pipeline de génération
 

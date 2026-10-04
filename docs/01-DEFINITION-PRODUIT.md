@@ -247,19 +247,16 @@ flowchart TD
 
 ```text
 com.oneshot
-├── identity/     comptes, JWT, refresh tokens
-├── generation/   formulaire, orchestration asynchrone, SSE
-├── rules/        moteur de règles pur (sans Spring), graine, budgets
-├── ai/           adaptateur Spring AI, prompts, validation du JSON
-├── plan/         one-shots, versions, verrous, chat
-├── library/      contenu personnel (monstres, tables, PNJ)
-├── export/       PDF
-└── shared/       erreurs, i18n, sécurité, configuration
+├── controller/      entrées HTTP et gélégation
+├── dto/             contrats d'entrée et de sortie
+├── mapper/          conversions entre contrats et modèles
+├── model/           objets-valeurs et modèles de persistance distincts
+├── service/         interfaces des services
+├── implementation/  implémentations et politiques métier
+└── repository/      accès aux données persistées
 ```
 
-Le module `rules` n'a aucune dépendance à un framework, ce qui le rend testable à 100 %.
-Le module `ai` se trouve derrière une interface (port). En test, il est remplacé par une
-implémentation factice qui renvoie des réponses prédéfinies.
+L'ADR-0010 remplace l'organisation par module en une organisation en couche.
 
 ---
 
