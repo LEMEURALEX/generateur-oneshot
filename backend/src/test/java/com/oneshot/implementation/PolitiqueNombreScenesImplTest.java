@@ -8,7 +8,6 @@ import java.util.random.RandomGeneratorFactory;
 
 import org.junit.jupiter.api.Test;
 
-import com.oneshot.implementation.PolitiqueNombreScenesImpl;
 import com.oneshot.model.DureeSession;
 
 public class PolitiqueNombreScenesImplTest {

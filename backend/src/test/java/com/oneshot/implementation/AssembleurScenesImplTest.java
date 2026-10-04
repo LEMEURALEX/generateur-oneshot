@@ -7,7 +7,6 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import com.oneshot.implementation.AssembleurScenesImpl;
 import com.oneshot.model.ComptageScenes;
 import com.oneshot.model.TypeScene;
 

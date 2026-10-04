@@ -5,8 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
 
-import com.oneshot.model.DureeSession;
-
 public class DureeSessionTest {
     
     DureeSession dureeSession120 = new DureeSession(120);

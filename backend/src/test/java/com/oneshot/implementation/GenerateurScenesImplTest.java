@@ -8,10 +8,6 @@ import java.util.random.RandomGeneratorFactory;
 
 import org.junit.jupiter.api.Test;
 
-import com.oneshot.implementation.AssembleurScenesImpl;
-import com.oneshot.implementation.GenerateurScenesImpl;
-import com.oneshot.implementation.PolitiqueNombreScenesImpl;
-import com.oneshot.implementation.PolitiqueRepartitionScenesImpl;
 import com.oneshot.model.DureeSession;
 import com.oneshot.model.Repartition;
 import com.oneshot.model.TypeScene;
